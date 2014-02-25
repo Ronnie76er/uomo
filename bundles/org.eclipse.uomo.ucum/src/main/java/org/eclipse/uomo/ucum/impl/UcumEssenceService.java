@@ -357,7 +357,7 @@ public class UcumEssenceService implements UcumService {
 				+ src.getValue().toPlainString() + ")= "
 				+ canValue.toPlainString() + s + " =("
 				+ dst.getValue().toPlainString() + ")= "
-				+ canValue.divide(dst.getValue()) + destUnit);
+				+ canValue.divide(dst.getValue(), new MathContext(25)) + destUnit);
 		return canValue.divide(dst.getValue(), new MathContext(25));
 	}
 
