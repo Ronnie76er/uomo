@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2005, 2013, Werner Keil and others.
+ * Copyright (c) 2005, 2014, Werner Keil and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -11,15 +11,10 @@
 package org.eclipse.uomo.units;
 
 import java.math.BigDecimal;
-import java.math.MathContext;
-
+import org.eclipse.uomo.units.internal.MeasureAmount;
 import org.unitsofmeasurement.quantity.Dimensionless;
 import org.unitsofmeasurement.quantity.Quantity;
-import org.unitsofmeasurement.unit.IncommensurableException;
-import org.unitsofmeasurement.unit.UnconvertibleException;
 import org.unitsofmeasurement.unit.Unit;
-import org.unitsofmeasurement.unit.UnitConverter;
-
 import com.ibm.icu.util.Measure;
 import com.ibm.icu.util.MeasureUnit;
 
@@ -35,10 +30,13 @@ import com.ibm.icu.util.MeasureUnit;
  * @version 1.3.4 ($Revision: 212 $), $Date: 2011-09-12 01:20:44 +0200 (Mo, 12
  *          Sep 2011) $ XXX rename to Amount, AbstractAmount or MeasureAmount?
  *          FIXME Bug 338334 overwrite equals()
+ * @deprecated use AbstractQuantity
  */
-public abstract class QuantityAmount<Q extends Quantity<Q>> extends Measure
+public abstract class QuantityAmount<Q extends Quantity<Q>>
 		implements IMeasure<Q> {
-
+	
+	private final Measure measure;
+	
 	/**
 	 * Holds a dimensionless measure of one (exact).
 	 */
@@ -46,34 +44,35 @@ public abstract class QuantityAmount<Q extends Quantity<Q>> extends Measure
 			QuantityFactory.getInstance(Dimensionless.class).create(
 					BigDecimal.ONE, AbstractUnit.ONE);
 	
-	/*
-	 * (non-Javadoc)
-	 * 
-	 * @see com.ibm.icu.util.Measure#equals(java.lang.Object)
-	 */
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + ((measure == null) ? 0 : measure.hashCode());
+		return result;
+	}
+
 	@Override
 	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
 		if (obj == null)
 			return false;
-		if (obj == this)
-			return true;
-		if (this.getClass() == obj.getClass()) {
-			return super.equals(obj);
-		} else {
-			if (obj instanceof Measure) {
-				Measure m = (Measure) obj;
-				if (m.getNumber().getClass() == this.getNumber().getClass()
-						&& m.getUnit().getClass() == this.unit().getClass()) {
-					return super.equals(obj);
-				} else {
-					// if (this.getQuantityUnit() instanceof AbstractUnit<?>) {
-					// if
-					// }
-					return super.equals(obj);
-				}
-			}
+		if (getClass() != obj.getClass())
 			return false;
-		}
+		@SuppressWarnings("unchecked")
+		QuantityAmount<Q> other = (QuantityAmount<Q>) obj;
+		if (measure == null) {
+			if (other.measure != null)
+				return false;
+		} else if (!measure.equals(other.measure))
+			return false;
+		return true;
+	}
+
+	@Override
+	public String toString() {
+		return String.valueOf(measure);
 	}
 
 	/**
@@ -99,9 +98,17 @@ public abstract class QuantityAmount<Q extends Quantity<Q>> extends Measure
 	// private double _maximum;
 
 	protected QuantityAmount(Number number, MeasureUnit unit) {
-		super(number, unit);
+		measure = MeasureAmount.of(number, unit);
 	}
 
+	/**
+	 * Returns the <b>ICU4J</b> <type>Measure</type> object.
+	 * @return the backing measure.
+	 */
+	public Measure getMeasure() {
+		return measure;
+	}
+	
 	/*
 	 * (non-Javadoc)
 	 * 
@@ -110,17 +117,9 @@ public abstract class QuantityAmount<Q extends Quantity<Q>> extends Measure
 	 * .Unit)
 	 */
 	@Override
-	public double doubleValue(Unit<Q> unit) {
-		Unit<Q> myUnit = unit();
-		try {
-			UnitConverter converter = unit.getConverterTo(myUnit);
-			return converter.convert(getNumber().doubleValue());
-		} catch (UnconvertibleException e) {
-			throw e;
-		} // catch (IncommensurableException e) {
-		// throw new IllegalArgumentException(e.getMessage());
-		// }
-	}
+    public double doubleValue(Unit<Q> unit) {
+        return (internalUnit().equals(unit)) ? value().doubleValue() : internalUnit().getConverterTo(unit).convert(value().doubleValue());
+    }
 
 	/*
 	 * (non-Javadoc)
@@ -131,17 +130,11 @@ public abstract class QuantityAmount<Q extends Quantity<Q>> extends Measure
 	 */
 	@Override
 	public long longValue(Unit<Q> unit) {
-		Unit<Q> myUnit = unit();
-		try {
-			UnitConverter converter = unit.getConverterToAny(myUnit);
-			return (converter.convert(
-					BigDecimal.valueOf(getNumber().longValue()),
-					MathContext.DECIMAL128)).longValue();
-		} catch (UnconvertibleException e) {
-			throw e;
-		} catch (IncommensurableException e) {
-			throw new IllegalArgumentException(e.getMessage());
-		}
+        double result = doubleValue(unit);
+        if ((result < Long.MIN_VALUE) || (result > Long.MAX_VALUE)) {
+            throw new ArithmeticException("Overflow (" + result + ")");
+        }
+        return (long) result;
 	}
 
 	/*
@@ -153,7 +146,7 @@ public abstract class QuantityAmount<Q extends Quantity<Q>> extends Measure
 	public Unit<Q> unit() {
 		return internalUnit();
 	}
-
+	
 	/*
 	 * (non-Javadoc)
 	 * 
@@ -176,25 +169,14 @@ public abstract class QuantityAmount<Q extends Quantity<Q>> extends Measure
 	public boolean isExact() {
 		return isExact;
 	}
-
-	// ////////////////////
-	// Factory Creation //
-	// ////////////////////
 	
-//	private static <Q extends Quantity<Q>> QuantityAmount<Q> create(Number value, Unit<Q> unit) {
-//		
-//	}
+	public Number getValue() {
+		return getNumber();
+	}
 	
-
-//	@SuppressWarnings("unchecked")
-//	protected static <Q extends Quantity<Q>> QuantityAmount<Q> newInstance(
-//			Number value, Unit<?> unit) {
-//		QuantityAmount<Q> measure = FACTORY.create(value, unit);
-//
-//		measure._unit = (Unit<Q>) unit;
-//
-//		return measure;
-//	}
+	public Unit<Q> getUnit() {
+		return internalUnit();
+	}
 
 	/**
 	 * Get the unit (convenience to avoid cast).
@@ -203,6 +185,10 @@ public abstract class QuantityAmount<Q extends Quantity<Q>> extends Measure
 	 */
 	@SuppressWarnings("unchecked")
 	private final AbstractUnit<Q> internalUnit() {
-		return (AbstractUnit<Q>) super.getUnit();
+		return (AbstractUnit<Q>) measure.getUnit();
+	}
+	
+	protected final Number getNumber() {
+		return measure.getNumber();
 	}
 }
